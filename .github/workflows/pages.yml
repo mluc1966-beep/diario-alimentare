@@ -3,10 +3,17 @@ name: Pubblica Diario Alimentare
 on:
   push:
     branches: ["main"]
+
   workflow_dispatch:
+    inputs:
+      refresh_crea:
+        description: "Rigenera il database CREA"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -17,20 +24,49 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Scarica il progetto
         uses: actions/checkout@v4
 
+      - name: Controlla database CREA
+        id: crea_check
+        shell: bash
+        run: |
+          if [ ! -s crea_foods.js ] || grep -q 'window.CREA_FOODS = window.CREA_FOODS || \[\];' crea_foods.js; then
+            echo "refresh=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "refresh=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Prepara Python
+        if: steps.crea_check.outputs.refresh == 'true' || inputs.refresh_crea == true
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Installa dipendenze
+        if: steps.crea_check.outputs.refresh == 'true' || inputs.refresh_crea == true
         run: pip install requests beautifulsoup4
 
       - name: Crea banca dati CREA locale
+        if: steps.crea_check.outputs.refresh == 'true' || inputs.refresh_crea == true
         run: python build_crea.py
+
+      - name: Salva database CREA nel repository
+        if: steps.crea_check.outputs.refresh == 'true' || inputs.refresh_crea == true
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crea_foods.js
+
+          if git diff --cached --quiet; then
+            echo "Database CREA già aggiornato"
+          else
+            git commit -m "Aggiorna database CREA"
+            git push
+          fi
 
       - name: Configura GitHub Pages
         uses: actions/configure-pages@v5
@@ -46,6 +82,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+
     steps:
       - name: Pubblica GitHub Pages
         id: deployment
