@@ -1,10 +1,12 @@
 <!doctype html>
+<!-- v33 patch: macro giornalieri + porzioni personali/casa · 2026-08-13 -->
+
 <html lang="it">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Diario alimentare Luca & Daniela</title>
-<!-- UI v32: archivio Alimenti personali; creazione da Impostazioni/Menù/Aiutante/ricette; doppioni Personale/CREA/Svizzera -->
+<!-- UI v33: archivio Alimenti personali; creazione da Impostazioni/Menù/Aiutante/ricette; doppioni Personale/CREA/Svizzera -->
 <meta name="theme-color" content="#2457c5">
 <meta name="description" content="Diario alimentare condiviso per Luca e Daniela con kcal e macronutrienti.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -300,7 +302,7 @@ const DB_VERSION=1;
 const MEALS=['Colazione','Spuntino mattutino','Pranzo','Spuntino pomeridiano','Cena'];
 const CORE_MEALS=['Colazione','Pranzo','Cena'];
 const PEOPLE=['Luca','Daniela'];
-const APP_VERSION=32;
+const APP_VERSION=33;
 const DEFAULT_COLORS={breakfast:'#fff2dc',snack:'#f1ecfa',lunch:'#e9f4ec',dinner:'#f6e7ec'};
 const LEGACY_DINNER_COLOR='#eaf1f8';
 const PASTEL_PALETTE=[
@@ -739,7 +741,7 @@ function renderEntryPanel(scroll=true){
   host.innerHTML=`<div class="entry-panel"><div class="section-title"><strong>Aggiungi a ${escapeHtml(selectedMeal)}</strong><span class="pill">Casa → Personale → CREA → Svizzera</span></div>
     <div style="margin-top:8px"><label>Cerca alimento</label><input id="foodSearch" autocomplete="off" placeholder="es. pasta, pollo, zucchina"><div id="suggestions" class="suggestions hidden"></div></div>
     <div id="selectedFoodBox" class="selected-food hidden"></div>
-    <div class="grid2" style="margin-top:8px"><div><label>Luca · grammi</label><input id="weightLuca" type="number" min="0" step="1"></div><div><label>Daniela · grammi</label><input id="weightDaniela" type="number" min="0" step="1"></div></div>
+    <div class="grid2" style="margin-top:8px"><div><label id="weightLucaLabel">Luca · grammi</label><input id="weightLuca" type="number" min="0" step="1"></div><div><label id="weightDanielaLabel">Daniela · grammi</label><input id="weightDaniela" type="number" min="0" step="1"></div></div>
     <div id="menuPortionHint" class="menu-larn-hint hidden"></div>
     <button id="addSelectedFood" class="primary" style="width:100%;margin-top:8px">Aggiungi a entrambi</button>
     <div class="sep"></div><button id="manualToggle" class="secondary" style="width:100%">+ Crea nuovo alimento personale</button>
@@ -752,7 +754,7 @@ function bindEntryPanel(){
   input.addEventListener('input',()=>renderSuggestions(input.value));
   document.getElementById('weightLuca').addEventListener('input',updateMenuPortionHint);
   document.getElementById('weightDaniela').addEventListener('input',updateMenuPortionHint);
-  document.getElementById('addSelectedFood').onclick=()=>{if(!selectedFood)return alert('Seleziona prima un alimento.');addSharedFood(selectedFood,document.getElementById('weightLuca').value,document.getElementById('weightDaniela').value)};
+  document.getElementById('addSelectedFood').onclick=()=>{if(!selectedFood)return alert('Seleziona prima un alimento.');addSharedFood(selectedFood,foodQuantityToGrams(selectedFood,document.getElementById('weightLuca').value),foodQuantityToGrams(selectedFood,document.getElementById('weightDaniela').value))};
   document.getElementById('manualToggle').onclick=()=>document.getElementById('manualBox').classList.toggle('hidden');
   document.getElementById('manualAdd').onclick=async()=>{const food={name:document.getElementById('manualName').value,kcal100:Number(document.getElementById('manualKcal').value),protein100:Number(document.getElementById('manualProtein').value),fat100:Number(document.getElementById('manualFat').value),carb100:Number(document.getElementById('manualCarb').value)};const resolved=await resolvePersonalFoodInput(food);if(!resolved)return;addSharedFood(resolved,document.getElementById('manualLuca').value,document.getElementById('manualDaniela').value)};
 }
@@ -764,6 +766,8 @@ function personalFoodCatalog(){
     protein100:Number(x.protein100)||0,
     fat100:Number(x.fat100)||0,
     carb100:Number(x.carb100)||0,
+    portionGrams:foodPortionGrams(x),
+    portionName:x.portionName||'',
     source:'Personale',
     personalId:x.id,
     personalVersion:x.version||1
@@ -788,7 +792,7 @@ function personalExactMatches(raw,excludePersonalId=null){
   return{personal,crea,swiss};
 }
 function personalFoodFromRecord(x){
-  return{name:x.name,kcal100:Number(x.kcal100)||0,protein100:Number(x.protein100)||0,fat100:Number(x.fat100)||0,carb100:Number(x.carb100)||0,source:'Personale',personalId:x.id,personalVersion:x.version||1}
+  return{name:x.name,kcal100:Number(x.kcal100)||0,protein100:Number(x.protein100)||0,fat100:Number(x.fat100)||0,carb100:Number(x.carb100)||0,portionGrams:foodPortionGrams(x),portionName:x.portionName||'',source:'Personale',personalId:x.id,personalVersion:x.version||1}
 }
 function personalFoodFromOfficial(x,source){
   return{...x,source}
@@ -819,6 +823,8 @@ function createPersonalRecord(food,preferredBase=null){
     protein100:Math.max(0,Number(food.protein100)||0),
     fat100:Math.max(0,Number(food.fat100)||0),
     carb100:Math.max(0,Number(food.carb100)||0),
+    portionGrams:(nullableNumber(food.portionGrams)!==null&&Number(food.portionGrams)>0)?Number(food.portionGrams):null,
+    portionName:String(food.portionName||'').trim(),
     createdAt:stamp,updatedAt:stamp,version:1
   };
   data.personalFoods.push(record);saveData('nuovo alimento personale');
@@ -826,7 +832,7 @@ function createPersonalRecord(food,preferredBase=null){
 }
 function updatePersonalRecord(record,food){
   const stamp=new Date().toISOString();
-  record.kcal100=Math.max(0,Number(food.kcal100)||0);record.protein100=Math.max(0,Number(food.protein100)||0);record.fat100=Math.max(0,Number(food.fat100)||0);record.carb100=Math.max(0,Number(food.carb100)||0);
+  record.kcal100=Math.max(0,Number(food.kcal100)||0);record.protein100=Math.max(0,Number(food.protein100)||0);record.fat100=Math.max(0,Number(food.fat100)||0);record.carb100=Math.max(0,Number(food.carb100)||0);record.portionGrams=(nullableNumber(food.portionGrams)!==null&&Number(food.portionGrams)>0)?Number(food.portionGrams):null;record.portionName=String(food.portionName||'').trim();
   record.updatedAt=stamp;record.version=(Number(record.version)||1)+1;
   saveData('modifica alimento personale');return record;
 }
@@ -896,7 +902,7 @@ async function resolvePersonalFoodInput(food,{excludePersonalId=null,editingReco
   return personalFoodFromRecord(rec);
 }
 
-function houseFoodCatalog(){return (data.houseFoods||[]).map(x=>({name:x.name,kcal100:Number(x.kcal100)||0,protein100:Number(x.protein100)||0,fat100:Number(x.fat100)||0,carb100:Number(x.carb100)||0,source:'Casa',houseId:x.id,recipeVersion:x.version||1,recipeWeight:houseEffectiveWeight(x)}))}
+function houseFoodCatalog(){return (data.houseFoods||[]).map(x=>({name:x.name,kcal100:Number(x.kcal100)||0,protein100:Number(x.protein100)||0,fat100:Number(x.fat100)||0,carb100:Number(x.carb100)||0,portionGrams:foodPortionGrams(x),portionName:x.portionName||'',source:'Casa',houseId:x.id,recipeVersion:x.version||1,recipeWeight:houseEffectiveWeight(x)}))}
 function searchFoodGroups(nq,{excludeHouseId=null}={}){
   // v27: le due banche dati vengono cercate sempre. In precedenza la banca svizzera
   // compariva solo quando CREA non aveva alcun risultato: questo nascondeva, ad esempio,
@@ -932,13 +938,13 @@ function chooseFood(item,source){
   selectedFood={...item,source};const box=document.getElementById('selectedFoodBox'),pp=helperPortionProfile(selectedFood);
   const larn=pp.source==='LARN/SINU'?`<div class="menu-larn-hint"><b>Riferimento LARN/SINU: ${money(pp.standard)} g</b> · ${escapeHtml(pp.label)}<br><span class="muted">È solo un riferimento di porzione: non limita ciò che puoi inserire.</span></div>`:'';
   box.innerHTML=`<b>${escapeHtml(item.name)}</b><br>${item.kcal100} kcal · ${item.protein100} g Prot · ${item.fat100} g Gras · ${item.carb100} g Carb /100 g · ${source}${larn}`;
-  box.classList.remove('hidden');document.getElementById('suggestions').classList.add('hidden');document.getElementById('foodSearch').value=item.name;updateMenuPortionHint();
+  box.classList.remove('hidden');document.getElementById('suggestions').classList.add('hidden');document.getElementById('foodSearch').value=item.name;updateMenuQuantityMode();updateMenuPortionHint();
 }
 function updateMenuPortionHint(){
   const box=document.getElementById('menuPortionHint');if(!box)return;if(!selectedFood){box.classList.add('hidden');return}
   const pp=helperPortionProfile(selectedFood);if(pp.source!=='LARN/SINU'||!Number(pp.standard)){box.classList.add('hidden');return}
   const std=Number(pp.standard),parts=[];let warn=false;
-  for(const p of PEOPLE){const id=p==='Luca'?'weightLuca':'weightDaniela',g=Math.max(0,Number(document.getElementById(id)?.value)||0);if(!g)continue;const ratio=g/std;let note='vicino al riferimento';if(ratio<.6){note='molto sotto il riferimento';warn=true}else if(ratio>.0&&ratio<.8)note='sotto il riferimento';else if(ratio>1.6){note='molto sopra il riferimento';warn=true}else if(ratio>1.25)note='sopra il riferimento';parts.push(`<b>${p}</b> ${money(g)} g: ${note}`)}
+  for(const p of PEOPLE){const id=p==='Luca'?'weightLuca':'weightDaniela',g=foodQuantityToGrams(selectedFood,document.getElementById(id)?.value);if(!g)continue;const ratio=g/std;let note='vicino al riferimento';if(ratio<.6){note='molto sotto il riferimento';warn=true}else if(ratio>.0&&ratio<.8)note='sotto il riferimento';else if(ratio>1.6){note='molto sopra il riferimento';warn=true}else if(ratio>1.25)note='sopra il riferimento';parts.push(`<b>${p}</b> ${money(g)} g: ${note}`)}
   if(!parts.length){box.classList.add('hidden');return}box.className='menu-larn-hint'+(warn?' warn':'');box.innerHTML=parts.join(' · ');
 }
 function addSharedFoodToMeal(food,meal,lWeight,dWeight,date=selectedDate,render=true){
@@ -1073,7 +1079,7 @@ function helperTheoreticalMax(item,person){
   if(kr.max!==null&&kg>0)lim=Math.min(lim,Math.max(0,(kr.max-base.kcal-other.kcal)/kg));
   if(pr.max!==null&&pg>0)lim=Math.min(lim,Math.max(0,(pr.max-base.protein-other.protein)/pg));
   const avail=nullableNumber(item.available);if(avail!==null&&item.stockMode!=='free'){const otherPerson=person==='Luca'?Number(item.gramsD||0):Number(item.gramsL||0);lim=Math.min(lim,Math.max(0,avail-otherPerson))}
-  return Number.isFinite(lim)?`${money(Math.floor(Math.max(0,lim)))} g`:'—';
+  if(!Number.isFinite(lim))return '—';const q=Math.floor(Math.max(0,lim)),portionG=foodPortionGrams(item.food);return portionG?`${dec(q/portionG)} ${escapeHtml(foodPortionLabel(item.food))} (${money(q)} g)`:`${money(q)} g`;
 }
 function helperStatusHtml(){
   const rows=PEOPLE.map(p=>{const t=helperPredicted(p),kr=helperRange(p,'kcal'),pr=helperRange(p,'protein');return `<tr><td>${p}</td><td>${money(t.kcal)}</td><td>${residualHtml(t.kcal,kr.min,kr.max,'kcal',true)}</td><td>${dec(t.protein)}</td><td>${residualHtml(t.protein,pr.min,pr.max,'g')}</td></tr>`}).join('');
@@ -1085,17 +1091,17 @@ function helperLockedHtml(){
 }
 function helperDraftItemHtml(it){
   const mealSelect=helperScope==='day'?`<div style="margin-bottom:8px"><label>Pasto di destinazione</label><select data-helper-meal="${it.id}">${visibleMeals(selectedDate).map(m=>`<option ${m===it.meal?'selected':''}>${escapeHtml(m)}</option>`).join('')}</select></div>`:'';
-  const av=it.available===null||it.available===undefined?'':it.available;
-  return `<div class="helper-item" data-helper-id="${it.id}"><div class="helper-item-head"><div><div class="helper-item-name">${escapeHtml(it.food.name)}</div><div class="helper-item-meta">${escapeHtml(it.food.source||'Fonte')} · ${it.food.kcal100} kcal · Prot ${it.food.protein100} · Gras ${it.food.fat100} · Carb ${it.food.carb100} /100 g</div></div><button class="helper-remove" data-helper-remove="${it.id}">×</button></div><div class="helper-item-body">${mealSelect}<div class="helper-required-row"><div><label>Nel pasto</label><select data-helper-required="${it.id}"><option value="required" ${it.required!==false?'selected':''}>Obbligatorio</option><option value="optional" ${it.required===false?'selected':''}>Facoltativo</option></select></div><div><label>Disponibile totale (g) · facoltativo</label><input data-helper-available="${it.id}" type="number" min="0" step="1" value="${av}"></div></div><div class="helper-stock"><div><label>Come usare la disponibilità</label><select data-helper-stock="${it.id}"><option value="max" ${it.stockMode==='max'?'selected':''}>Max disponibile</option><option value="all" ${it.stockMode==='all'?'selected':''}>Usa tutto</option><option value="free" ${it.stockMode==='free'?'selected':''}>Nessun limite</option></select></div><div class="helper-note">La porzione LARN/SINU è solo un riferimento. Il calcolo resta limitato nel tempo per non bloccare il dispositivo.</div></div><div class="helper-grams"><div class="helper-person-box"><div class="helper-person-top"><strong>Luca</strong><label class="helper-lock"><input data-helper-lock="Luca:${it.id}" type="checkbox" ${it.lockL?'checked':''}> 🔒 blocca</label></div><input data-helper-grams="Luca:${it.id}" type="number" min="0" step="1" value="${Math.round(it.gramsL||0)}"><div class="helper-max">Max con residui e disponibilità: <b>${helperTheoreticalMax(it,'Luca')}</b></div></div><div class="helper-person-box"><div class="helper-person-top"><strong>Daniela</strong><label class="helper-lock"><input data-helper-lock="Daniela:${it.id}" type="checkbox" ${it.lockD?'checked':''}> 🔒 blocca</label></div><input data-helper-grams="Daniela:${it.id}" type="number" min="0" step="1" value="${Math.round(it.gramsD||0)}"><div class="helper-max">Max con residui e disponibilità: <b>${helperTheoreticalMax(it,'Daniela')}</b></div></div></div></div></div>`;
+  const portionG=foodPortionGrams(it.food),unit=portionG?foodPortionLabel(it.food):'g',step=portionG?'0.1':'1',av=it.available===null||it.available===undefined?'':foodQuantityInputValue(it.food,it.available);
+  return `<div class="helper-item" data-helper-id="${it.id}"><div class="helper-item-head"><div><div class="helper-item-name">${escapeHtml(it.food.name)}</div><div class="helper-item-meta">${escapeHtml(it.food.source||'Fonte')} · ${it.food.kcal100} kcal · Prot ${it.food.protein100} · Gras ${it.food.fat100} · Carb ${it.food.carb100} /100 g</div></div><button class="helper-remove" data-helper-remove="${it.id}">×</button></div><div class="helper-item-body">${mealSelect}<div class="helper-required-row"><div><label>Nel pasto</label><select data-helper-required="${it.id}"><option value="required" ${it.required!==false?'selected':''}>Obbligatorio</option><option value="optional" ${it.required===false?'selected':''}>Facoltativo</option></select></div><div><label>Disponibile totale (${escapeHtml(unit)}) · facoltativo</label><input data-helper-available="${it.id}" type="number" min="0" step="${step}" value="${av}"></div></div><div class="helper-stock"><div><label>Come usare la disponibilità</label><select data-helper-stock="${it.id}"><option value="max" ${it.stockMode==='max'?'selected':''}>Max disponibile</option><option value="all" ${it.stockMode==='all'?'selected':''}>Usa tutto</option><option value="free" ${it.stockMode==='free'?'selected':''}>Nessun limite</option></select></div><div class="helper-note">La porzione LARN/SINU è solo un riferimento. Il calcolo resta limitato nel tempo per non bloccare il dispositivo.</div></div><div class="helper-grams"><div class="helper-person-box"><div class="helper-person-top"><strong>Luca</strong><label class="helper-lock"><input data-helper-lock="Luca:${it.id}" type="checkbox" ${it.lockL?'checked':''}> 🔒 blocca</label></div><input data-helper-grams="Luca:${it.id}" type="number" min="0" step="${step}" value="${foodQuantityInputValue(it.food,it.gramsL||0)}"><div class="helper-max">Unità: <b>${escapeHtml(unit)}</b></div><div class="helper-max">Max con residui e disponibilità: <b>${helperTheoreticalMax(it,'Luca')}</b></div></div><div class="helper-person-box"><div class="helper-person-top"><strong>Daniela</strong><label class="helper-lock"><input data-helper-lock="Daniela:${it.id}" type="checkbox" ${it.lockD?'checked':''}> 🔒 blocca</label></div><input data-helper-grams="Daniela:${it.id}" type="number" min="0" step="${step}" value="${foodQuantityInputValue(it.food,it.gramsD||0)}"><div class="helper-max">Unità: <b>${escapeHtml(unit)}</b></div><div class="helper-max">Max con residui e disponibilità: <b>${helperTheoreticalMax(it,'Daniela')}</b></div></div></div></div></div>`;
 }
 function helperSyncControls(){
   helperScope=document.getElementById('helperScope')?.value||helperScope;helperMeal=document.getElementById('helperMeal')?.value||helperMeal;helperStrategy=document.getElementById('helperStrategy')?.value||helperStrategy;
   for(const it of helperDraft){
-    const av=document.querySelector(`[data-helper-available="${it.id}"]`);if(av)it.available=nullableNumber(av.value);
+    const av=document.querySelector(`[data-helper-available="${it.id}"]`);if(av){const q=nullableNumber(av.value);it.available=q===null?null:foodQuantityToGrams(it.food,q)}
     const sm=document.querySelector(`[data-helper-stock="${it.id}"]`);if(sm)it.stockMode=sm.value;
     const req=document.querySelector(`[data-helper-required="${it.id}"]`);if(req)it.required=req.value!=='optional';
     const ms=document.querySelector(`[data-helper-meal="${it.id}"]`);if(ms)it.meal=ms.value;
-    for(const p of PEOPLE){const g=document.querySelector(`[data-helper-grams="${p}:${it.id}"]`),l=document.querySelector(`[data-helper-lock="${p}:${it.id}"]`);if(g)it[p==='Luca'?'gramsL':'gramsD']=Math.max(0,Number(g.value)||0);if(l)it[p==='Luca'?'lockL':'lockD']=l.checked}
+    for(const p of PEOPLE){const g=document.querySelector(`[data-helper-grams="${p}:${it.id}"]`),l=document.querySelector(`[data-helper-lock="${p}:${it.id}"]`);if(g)it[p==='Luca'?'gramsL':'gramsD']=foodQuantityToGrams(it.food,g.value);if(l)it[p==='Luca'?'lockL':'lockD']=l.checked}
   }
 }
 function renderHelper(){
@@ -1110,7 +1116,7 @@ function bindHelperDraftControls(){
 }
 function helperChooseFood(item,source){
   helperSelectedFood={...item,source};const box=document.getElementById('helperSelectedFood');
-  box.innerHTML=`<b>${escapeHtml(item.name)}</b><br>${item.kcal100} kcal · ${item.protein100} g Prot · ${item.fat100} g Gras · ${item.carb100} g Carb /100 g · ${source}<div class="helper-prestock"><div><label>Disponibile totale (g) · facoltativo</label><input id="helperPreAvailable" type="number" min="0" step="1" placeholder="es. 300"></div><div><label>Come usarla</label><select id="helperPreStock"><option value="max">Max disponibile</option><option value="all">Usa tutto</option><option value="free">Nessun limite</option></select></div><div class="helper-note">Se lasci vuoto, l’Aiutante considera la quantità non limitata. Il valore è riferito alla quantità totale disponibile per Luca + Daniela.</div></div>`;
+  box.innerHTML=`<b>${escapeHtml(item.name)}</b><br>${item.kcal100} kcal · ${item.protein100} g Prot · ${item.fat100} g Gras · ${item.carb100} g Carb /100 g · ${source}<div class="helper-prestock"><div><label>Disponibile totale (${foodPortionGrams(helperSelectedFood)?escapeHtml(foodPortionLabel(helperSelectedFood)):'g'}) · facoltativo</label><input id="helperPreAvailable" type="number" min="0" step="${foodPortionGrams(helperSelectedFood)?'0.1':'1'}" placeholder="${foodPortionGrams(helperSelectedFood)?'es. 2':'es. 300'}"></div><div><label>Come usarla</label><select id="helperPreStock"><option value="max">Max disponibile</option><option value="all">Usa tutto</option><option value="free">Nessun limite</option></select></div><div class="helper-note">Se lasci vuoto, l’Aiutante considera la quantità non limitata. Il valore è riferito alla quantità totale disponibile per Luca + Daniela.</div></div>`;
   box.classList.remove('hidden');document.getElementById('helperSuggestions').classList.add('hidden');document.getElementById('helperFoodSearch').value=item.name;
 }
 function helperSuggestions(q){
@@ -1133,6 +1139,7 @@ function helperObjective(mode=helperStrategy){
     if(kr.max!==null&&t.kcal>kr.max)score+=500*((t.kcal-kr.max)/scaleK)**2;
     if(pr.min!==null&&t.protein<pr.min)score+=48*((pr.min-t.protein)/scaleP)**2;
     if(pr.max!==null&&t.protein>pr.max)score+=600*((t.protein-pr.max)/scaleP)**2;
+    score+=85*macroRangePenalty(t);
   }
   // 2) Le porzioni standard sono riferimenti morbidi. Possono essere superate quando serve
   //    per raggiungere i minimi, oppure su scelta esplicita dell'utente per avvicinarsi ai massimi.
@@ -1170,7 +1177,7 @@ function helperInitializeDraft(){
   for(const it of helperDraft){
     if(it.required===undefined)it.required=true;
     const av=nullableNumber(it.available);
-    if(it.stockMode==='all'&&av===null)return `Per “${it.food.name}” hai scelto “Usa tutto” ma non hai indicato i grammi disponibili.`;
+    if(it.stockMode==='all'&&av===null)return `Per “${it.food.name}” hai scelto “Usa tutto” ma non hai indicato la quantità disponibile.`;
 
     const gL=Math.max(0,Number(it.gramsL)||0),gD=Math.max(0,Number(it.gramsD)||0);
     const lockedUsed=(it.lockL?gL:0)+(it.lockD?gD:0);
@@ -1348,6 +1355,7 @@ function helperFastObjective(ctx,mode=helperStrategy){
     if(kr.max!==null&&t.kcal>kr.max)score+=500*((t.kcal-kr.max)/scaleK)**2;
     if(pr.min!==null&&t.protein<pr.min)score+=48*((pr.min-t.protein)/scaleP)**2;
     if(pr.max!==null&&t.protein>pr.max)score+=600*((t.protein-pr.max)/scaleP)**2;
+    score+=85*macroRangePenalty(t);
   }
   for(const it of helperDraft){
     const vals={Luca:Number(it.gramsL||0),Daniela:Number(it.gramsD||0)},norm={};
@@ -1432,7 +1440,7 @@ async function helperOptimizeCore(mode=helperStrategy){
   let timedOut=false;
   for(let si=0;si<steps.length;si++){
     const step=steps[si];
-    helperBusyUpdate(`Bilancio kcal e proteine · precisione ${step} g`,48+si*10);
+    helperBusyUpdate(`Bilancio kcal e macronutrienti · precisione ${step} g`,48+si*10);
     for(let move=0;move<maxMoves;move++){
       if(performance.now()-startTime>maxMs){timedOut=true;break}
       const baseScore=helperFastObjective(ctx,mode);let best=null,bestScore=baseScore;
@@ -1573,7 +1581,7 @@ function helperConfirm(){
 
 function helperMoveDate(n){helperSyncControls();if(helperDraft.length&&!confirm('Cambiare data azzera la simulazione corrente. Continuare?'))return;helperDraft=[];helperSelectedFood=null;const d=fromIso(selectedDate);d.setDate(d.getDate()+n);selectedDate=toIso(d);renderHelper()}
 function bindHelperStatic(){
-  document.getElementById('helperFoodSearch').addEventListener('input',e=>helperSuggestions(e.target.value));document.getElementById('helperAddFood').onclick=()=>{if(!helperSelectedFood)return alert('Seleziona prima un alimento.');const av=document.getElementById('helperPreAvailable')?.value??'',sm=document.getElementById('helperPreStock')?.value||'max';if(sm==='all'&&nullableNumber(av)===null)return alert('Per “Usa tutto” indica prima quanti grammi hai disponibili.');helperAddDraft(helperSelectedFood,av,sm)};document.getElementById('helperManualToggle').onclick=()=>document.getElementById('helperManualBox').classList.toggle('hidden');document.getElementById('helperManualAdd').onclick=async()=>{const food={name:document.getElementById('helperManualName').value,kcal100:Number(document.getElementById('helperManualKcal').value),protein100:Number(document.getElementById('helperManualProtein').value),fat100:Number(document.getElementById('helperManualFat').value),carb100:Number(document.getElementById('helperManualCarb').value)};const resolved=await resolvePersonalFoodInput(food);if(!resolved)return;helperAddDraft(resolved)};
+  document.getElementById('helperFoodSearch').addEventListener('input',e=>helperSuggestions(e.target.value));document.getElementById('helperAddFood').onclick=()=>{if(!helperSelectedFood)return alert('Seleziona prima un alimento.');const av=document.getElementById('helperPreAvailable')?.value??'',sm=document.getElementById('helperPreStock')?.value||'max';if(sm==='all'&&nullableNumber(av)===null)return alert('Per “Usa tutto” indica prima la quantità disponibile.');helperAddDraft(helperSelectedFood,nullableNumber(av)===null?null:foodQuantityToGrams(helperSelectedFood,av),sm)};document.getElementById('helperManualToggle').onclick=()=>document.getElementById('helperManualBox').classList.toggle('hidden');document.getElementById('helperManualAdd').onclick=async()=>{const food={name:document.getElementById('helperManualName').value,kcal100:Number(document.getElementById('helperManualKcal').value),protein100:Number(document.getElementById('helperManualProtein').value),fat100:Number(document.getElementById('helperManualFat').value),carb100:Number(document.getElementById('helperManualCarb').value)};const resolved=await resolvePersonalFoodInput(food);if(!resolved)return;helperAddDraft(resolved)};
   document.getElementById('helperScope').onchange=e=>{helperSyncControls();helperScope=e.target.value;renderHelper()};document.getElementById('helperMeal').onchange=e=>{helperMeal=e.target.value;renderHelper()};document.getElementById('helperStrategy').onchange=e=>{helperStrategy=e.target.value;renderHelper()};document.getElementById('helperCalculate').onclick=helperOptimize;document.getElementById('helperConfirm').onclick=helperConfirm;document.getElementById('helperReset').onclick=()=>{if(helperDraft.length&&!confirm('Azzera tutta la simulazione?'))return;helperDraft=[];helperSelectedFood=null;renderHelper()};document.getElementById('helperPrevDay').onclick=()=>helperMoveDate(-1);document.getElementById('helperNextDay').onclick=()=>helperMoveDate(1);document.getElementById('helperDate').onchange=e=>{if(!e.target.value)return;helperSyncControls();if(helperDraft.length&&!confirm('Cambiare data azzera la simulazione corrente. Continuare?')){e.target.value=selectedDate;return}helperDraft=[];helperSelectedFood=null;selectedDate=e.target.value;renderHelper()};
 }
 
@@ -1602,10 +1610,52 @@ function diaryPersonDayTable(ds,p){
   if(!body)body='<tr><td colspan="6" class="muted">Nessun alimento.</td></tr>';
   return `<div class="diary-table-wrap"><table class="diary-table"><thead><tr><th>Alimento</th><th>g</th><th>kcal</th><th>Prot</th><th>Gras</th><th>Carb</th></tr></thead><tbody>${body}<tr class="diary-meal"><td>Totale giorno</td><td></td><td>${money(tot.kcal)}</td><td>${dec(tot.protein)}</td><td>${dec(tot.fat)}</td><td>${dec(tot.carb)}</td></tr></tbody></table></div>`;
 }
+
+// v33 · obiettivi di composizione energetica giornaliera.
+const MACRO_LIMITS={carb:[45,60],fat:[25,35],protein:[12,15]};
+function macroComposition(t){
+  const proteinKcal=Math.max(0,Number(t?.protein)||0)*4;
+  const fatKcal=Math.max(0,Number(t?.fat)||0)*9;
+  const carbKcal=Math.max(0,Number(t?.carb)||0)*4;
+  const total=proteinKcal+fatKcal+carbKcal;
+  if(!(total>0))return{protein:null,fat:null,carb:null,total:0};
+  return{protein:proteinKcal*100/total,fat:fatKcal*100/total,carb:carbKcal*100/total,total};
+}
+function macroOutside(key,pct){
+  if(pct===null||pct===undefined)return false;
+  const [min,max]=MACRO_LIMITS[key];return pct<min||pct>max;
+}
+function macroSummaryValue(key,pct){
+  return pct===null?'<span class="muted">—</span>':`<span class="${macroOutside(key,pct)?'bad':''}">${dec(pct)}%</span>`;
+}
+function macroRangePenalty(t){
+  const m=macroComposition(t);if(!m.total)return 0;
+  let score=0;
+  for(const key of ['carb','fat','protein']){
+    const [lo,hi]=MACRO_LIMITS[key],x=m[key];
+    if(x<lo)score+=((lo-x)/5)**2;else if(x>hi)score+=((x-hi)/5)**2;
+  }
+  return score;
+}
+
+// v33 · unità "porzione" per alimenti personali e preparazioni di casa.
+// I calcoli e lo storico continuano a usare sempre i grammi.
+function foodPortionGrams(food){const g=nullableNumber(food?.portionGrams);return g!==null&&g>0?g:null}
+function foodPortionLabel(food){return String(food?.portionName||'porzione').trim()||'porzione'}
+function foodQuantityToGrams(food,value){const v=Math.max(0,Number(value)||0),pg=foodPortionGrams(food);return pg?v*pg:v}
+function foodGramsToQuantity(food,grams){const g=Math.max(0,Number(grams)||0),pg=foodPortionGrams(food);return pg?g/pg:g}
+function foodQuantityInputValue(food,grams){const q=foodGramsToQuantity(food,grams);return Math.round(q*100)/100}
+function foodDisplayQuantity(food,grams){const pg=foodPortionGrams(food);return pg?`${dec(foodGramsToQuantity(food,grams))} ${escapeHtml(foodPortionLabel(food))} (${money(grams)} g)`:`${money(grams)} g`}
+function updateMenuQuantityMode(){
+  if(!selectedFood)return;
+  const pg=foodPortionGrams(selectedFood),unit=pg?foodPortionLabel(selectedFood):'grammi',step=pg?'0.1':'1';
+  for(const p of PEOPLE){const id=p==='Luca'?'weightLuca':'weightDaniela',lab=document.getElementById(id+'Label'),inp=document.getElementById(id);if(lab)lab.textContent=`${p} · ${unit}`;if(inp)inp.step=step}
+}
+
 function renderDiary(){
   document.getElementById('diaryLuca').classList.toggle('active',diaryPerson==='Luca');document.getElementById('diaryDaniela').classList.toggle('active',diaryPerson==='Daniela');
   const current=mondayOf(todayIso());let keys=Object.keys(data.weeks).sort().reverse().filter(k=>data.weeks[k]&&(weekHasActivity(data.weeks[k])||k===current));if(!keys.includes(current)){ensureWeek(current);keys=[current,...keys]}
-  const html=keys.map((k,wi)=>{const w=ensureWeek(k),dates=weekDates(k),wt=weekTotals(k,diaryPerson),stats=calcWeek(k,diaryPerson);const dayHtml=dates.map(ds=>{const t=personTotals(ds,diaryPerson),o=dayObj(ds,diaryPerson),has=t.count>0||o.closed;const label=isFuture(ds)?'programmato':o.closed?'chiuso':'aperto';return `<details class="day-details" ${ds===selectedDate&&has?'open':''}><summary><div class="day-summary-top"><span>${escapeHtml(dateDayLong(ds))}</span><span>${money(t.kcal)} kcal</span></div><div class="day-summary-sub">Prot ${dec(t.protein)} · Gras ${dec(t.fat)} · Carb ${dec(t.carb)} · ${label}</div></summary><div class="detail-pad">${diaryPersonDayTable(ds,diaryPerson)}</div></details>`}).join('');return `<details class="week-details" ${wi===0?'open':''}><summary><div class="week-summary-top"><span>${dates[0].slice(8)}/${dates[0].slice(5,7)} → ${dates[6].slice(8)}/${dates[6].slice(5,7)}/${dates[6].slice(0,4)}</span><span>${money(wt.kcal)} kcal</span></div><div class="week-metrics"><div><span>Prot</span><b>${dec(wt.protein)} g</b></div><div><span>Gras</span><b>${dec(wt.fat)} g</b></div><div><span>Carb</span><b>${dec(wt.carb)} g</b></div><div><span>Credito</span><b>${money(stats.bank)} kcal</b></div></div></summary><div class="detail-pad">${dayHtml}</div></details>`}).join('');
+  const html=keys.map((k,wi)=>{const w=ensureWeek(k),dates=weekDates(k),wt=weekTotals(k,diaryPerson),wm=macroComposition(wt),stats=calcWeek(k,diaryPerson);const dayHtml=dates.map(ds=>{const t=personTotals(ds,diaryPerson),dm=macroComposition(t),o=dayObj(ds,diaryPerson),has=t.count>0||o.closed;const label=isFuture(ds)?'programmato':o.closed?'chiuso':'aperto';return `<details class="day-details" ${ds===selectedDate&&has?'open':''}><summary><div class="day-summary-top"><span>${escapeHtml(dateDayLong(ds))}</span><span>${money(t.kcal)} kcal</span></div><div class="day-summary-sub">Prot ${dec(t.protein)} g · ${macroSummaryValue('protein',dm.protein)} · Gras ${dec(t.fat)} g · ${macroSummaryValue('fat',dm.fat)} · Carb ${dec(t.carb)} g · ${macroSummaryValue('carb',dm.carb)} · ${label}</div></summary><div class="detail-pad">${diaryPersonDayTable(ds,diaryPerson)}</div></details>`}).join('');return `<details class="week-details" ${wi===0?'open':''}><summary><div class="week-summary-top"><span>${dates[0].slice(8)}/${dates[0].slice(5,7)} → ${dates[6].slice(8)}/${dates[6].slice(5,7)}/${dates[6].slice(0,4)}</span><span>${money(wt.kcal)} kcal</span></div><div class="week-metrics"><div><span>Prot</span><b>${dec(wt.protein)} g · ${macroSummaryValue('protein',wm.protein)}</b></div><div><span>Gras</span><b>${dec(wt.fat)} g · ${macroSummaryValue('fat',wm.fat)}</b></div><div><span>Carb</span><b>${dec(wt.carb)} g · ${macroSummaryValue('carb',wm.carb)}</b></div><div><span>Credito</span><b>${money(stats.bank)} kcal</b></div></div></summary><div class="detail-pad">${dayHtml}</div></details>`}).join('');
   document.getElementById('diaryList').innerHTML=html||'<p class="muted">Nessuna settimana registrata.</p>';
 }
 document.getElementById('diaryLuca').onclick=()=>{diaryPerson='Luca';renderDiary()};document.getElementById('diaryDaniela').onclick=()=>{diaryPerson='Daniela';renderDiary()};
@@ -1614,15 +1664,15 @@ function houseIngredientSnapshot(food,grams){return{id:uid(),name:String(food.na
 function houseTotals(recipe){return (recipe?.ingredients||[]).reduce((o,it)=>{const f=Math.max(0,Number(it.grams)||0)/100;o.weight+=Math.max(0,Number(it.grams)||0);o.kcal+=Number(it.kcal100||0)*f;o.protein+=Number(it.protein100||0)*f;o.fat+=Number(it.fat100||0)*f;o.carb+=Number(it.carb100||0)*f;return o},{weight:0,kcal:0,protein:0,fat:0,carb:0})}
 function houseEffectiveWeight(recipe){const t=houseTotals(recipe),fw=nullableNumber(recipe?.finalWeight);return fw!==null&&fw>0?fw:t.weight}
 function houseCompute(recipe){const t=houseTotals(recipe),w=houseEffectiveWeight(recipe),f=w>0?100/w:0;return{ingredientWeight:t.weight,effectiveWeight:w,kcal:t.kcal,protein:t.protein,fat:t.fat,carb:t.carb,kcal100:t.kcal*f,protein100:t.protein*f,fat100:t.fat*f,carb100:t.carb*f}}
-function houseSyncEditorInputs(){if(!houseEditor)return;const n=document.getElementById('houseName'),fw=document.getElementById('houseFinalWeight');if(n)houseEditor.name=n.value;if(fw)houseEditor.finalWeight=nullableNumber(fw.value)}
-function houseNew(){houseEditor={id:null,name:'',finalWeight:null,ingredients:[],version:1};houseSelectedIngredient=null;renderHouseFoodsPanel();setTimeout(()=>document.getElementById('houseName')?.focus(),0)}
+function houseSyncEditorInputs(){if(!houseEditor)return;const n=document.getElementById('houseName'),fw=document.getElementById('houseFinalWeight'),pg=document.getElementById('housePortionGrams'),pn=document.getElementById('housePortionName');if(n)houseEditor.name=n.value;if(fw)houseEditor.finalWeight=nullableNumber(fw.value);if(pg)houseEditor.portionGrams=(nullableNumber(pg.value)!==null&&Number(pg.value)>0)?Number(pg.value):null;if(pn)houseEditor.portionName=pn.value}
+function houseNew(){houseEditor={id:null,name:'',finalWeight:null,portionGrams:null,portionName:'porzione',ingredients:[],version:1};houseSelectedIngredient=null;renderHouseFoodsPanel();setTimeout(()=>document.getElementById('houseName')?.focus(),0)}
 function houseEdit(id){const r=(data.houseFoods||[]).find(x=>x.id===id);if(!r)return;houseEditor=clone(r);houseSelectedIngredient=null;renderHouseFoodsPanel()}
 function houseDuplicate(id){const r=(data.houseFoods||[]).find(x=>x.id===id);if(!r)return;houseEditor=clone(r);houseEditor.id=null;houseEditor.name=(r.name||'Preparazione')+' copia';houseEditor.version=1;houseEditor.createdAt=null;houseSelectedIngredient=null;renderHouseFoodsPanel()}
 function houseDelete(id){const r=(data.houseFoods||[]).find(x=>x.id===id);if(!r)return;if(!confirm(`Eliminare “${r.name}” dalle Preparazioni di casa?\n\nI vecchi Menù e il Diario non cambieranno perché conservano i valori nutrizionali usati al momento dell’inserimento.`))return;data.houseFoods=data.houseFoods.filter(x=>x.id!==id);saveData('elimina preparazione');if(houseEditor?.id===id)houseEditor=null;renderSettings()}
-function houseSavedListHtml(){const arr=(data.houseFoods||[]).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'it'));if(!arr.length)return '<div class="house-empty">Non hai ancora salvato preparazioni di casa.</div>';return arr.map(r=>{const c=houseCompute(r),w=c.effectiveWeight;return `<div class="house-item"><div class="house-item-top"><div><div class="house-item-name">${escapeHtml(r.name)}</div><div class="muted">${r.ingredients?.length||0} ingredienti · peso finale ${money(w)} g · v${r.version||1}</div></div><span class="house-badge">🏠 Casa</span></div><div class="house-values"><div class="house-value"><span>kcal/100 g</span><b>${money(r.kcal100)}</b></div><div class="house-value"><span>Prot</span><b>${dec(r.protein100)}</b></div><div class="house-value"><span>Gras</span><b>${dec(r.fat100)}</b></div><div class="house-value"><span>Carb</span><b>${dec(r.carb100)}</b></div></div><div class="house-item-actions"><button class="secondary" data-house-edit="${r.id}">Modifica</button><button class="secondary" data-house-dup="${r.id}">Duplica</button><button class="danger" data-house-del="${r.id}">Elimina</button></div></div>`}).join('')}
+function houseSavedListHtml(){const arr=(data.houseFoods||[]).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'it'));if(!arr.length)return '<div class="house-empty">Non hai ancora salvato preparazioni di casa.</div>';return arr.map(r=>{const c=houseCompute(r),w=c.effectiveWeight;return `<div class="house-item"><div class="house-item-top"><div><div class="house-item-name">${escapeHtml(r.name)}</div><div class="muted">${r.ingredients?.length||0} ingredienti · peso finale ${money(w)} g${foodPortionGrams(r)?` · 1 ${escapeHtml(foodPortionLabel(r))} = ${money(foodPortionGrams(r))} g`:''} · v${r.version||1}</div></div><span class="house-badge">🏠 Casa</span></div><div class="house-values"><div class="house-value"><span>kcal/100 g</span><b>${money(r.kcal100)}</b></div><div class="house-value"><span>Prot</span><b>${dec(r.protein100)}</b></div><div class="house-value"><span>Gras</span><b>${dec(r.fat100)}</b></div><div class="house-value"><span>Carb</span><b>${dec(r.carb100)}</b></div></div><div class="house-item-actions"><button class="secondary" data-house-edit="${r.id}">Modifica</button><button class="secondary" data-house-dup="${r.id}">Duplica</button><button class="danger" data-house-del="${r.id}">Elimina</button></div></div>`}).join('')}
 function houseIngredientRowsHtml(){if(!houseEditor?.ingredients?.length)return '<div class="house-empty" style="border:0">Aggiungi almeno un ingrediente.</div>';return houseEditor.ingredients.map(it=>`<div class="house-ing-row"><div><div class="house-ing-name">${escapeHtml(it.name)}</div><div class="house-ing-meta">${escapeHtml(it.source||'')} · ${money(it.kcal100)} kcal · Prot ${dec(it.protein100)} /100 g</div></div><input type="number" min="0" step="1" value="${Number(it.grams)||0}" data-house-ing-grams="${it.id}" aria-label="Grammi ${escapeHtml(it.name)}"><button class="house-delete" data-house-ing-del="${it.id}">×</button></div>`).join('')}
 function houseSummaryHtml(){if(!houseEditor)return '';const c=houseCompute(houseEditor),fw=nullableNumber(houseEditor.finalWeight),weightText=fw!==null&&fw>0?`${money(c.effectiveWeight)} g inserito`:`${money(c.effectiveWeight)} g = somma ingredienti`;return `<div class="house-summary"><div class="house-summary-top"><div>Peso ingredienti: <b>${money(c.ingredientWeight)} g</b></div><div>Peso usato nel calcolo: <b>${weightText}</b></div></div><div class="house-summary-values"><div><span>kcal/100 g</span><b>${money(c.kcal100)}</b></div><div><span>Prot/100 g</span><b>${dec(c.protein100)}</b></div><div><span>Gras/100 g</span><b>${dec(c.fat100)}</b></div><div><span>Carb/100 g</span><b>${dec(c.carb100)}</b></div></div><div class="house-note">Il peso finale è particolarmente importante per preparazioni cotte: tiene conto dell’acqua persa o assorbita. Se lo lasci vuoto viene usata la somma dei grammi degli ingredienti.</div></div>`}
-function houseEditorHtml(){if(!houseEditor)return '';return `<div class="house-editor"><h3>${houseEditor.id?'Modifica preparazione':'Nuova preparazione'}</h3><label>Nome specifico</label><input id="houseName" value="${escapeHtml(houseEditor.name||'')}" placeholder="es. Pane di farro della casa"><div style="margin-top:8px"><label>Peso finale preparazione (g) · consigliato dopo cottura</label><input id="houseFinalWeight" type="number" min="0" step="1" value="${houseEditor.finalWeight??''}" placeholder="se vuoto: somma ingredienti"></div><div class="house-ing-search"><label>Aggiungi ingrediente</label><input id="houseIngredientSearch" autocomplete="off" placeholder="es. farina di farro, olio, zucchine"><div id="houseIngredientSuggestions" class="suggestions hidden"></div><div id="houseIngredientSelected" class="house-selected hidden"></div><div class="grid2" style="margin-top:7px"><div><label>Grammi ingrediente</label><input id="houseIngredientGrams" type="number" min="0" step="1"></div><div style="display:flex;align-items:end"><button id="houseIngredientAdd" class="primary" style="width:100%">Aggiungi</button></div></div><div class="house-manual"><button id="houseManualToggle" class="secondary" style="width:100%">+ Crea ingrediente personale</button><div id="houseManualBox" class="hidden" style="margin-top:8px"><label>Nome</label><input id="houseManualName"><div class="grid2" style="margin-top:7px"><div><label>Grammi</label><input id="houseManualGrams" type="number" min="0" step="1"></div><div><label>kcal/100 g</label><input id="houseManualKcal" type="number" min="0" step="0.1"></div><div><label>Proteine/100 g</label><input id="houseManualProtein" type="number" min="0" step="0.1"></div><div><label>Grassi/100 g</label><input id="houseManualFat" type="number" min="0" step="0.1"></div><div><label>Carboidrati/100 g</label><input id="houseManualCarb" type="number" min="0" step="0.1"></div></div><div class="personal-quick-note">L’ingrediente verrà salvato anche nell’archivio Alimenti personali.</div><button id="houseManualAdd" class="secondary" style="width:100%;margin-top:7px">Salva e aggiungi ingrediente</button></div></div></div><div class="backup-mini-title" style="margin-top:10px">Ingredienti</div><div class="house-ing-list">${houseIngredientRowsHtml()}</div><div id="houseRecipeSummary">${houseSummaryHtml()}</div><div class="house-editor-actions"><button id="houseCancel" class="secondary">Annulla</button><button id="houseSave" class="primary">Salva preparazione</button></div></div>`}
+function houseEditorHtml(){if(!houseEditor)return '';return `<div class="house-editor"><h3>${houseEditor.id?'Modifica preparazione':'Nuova preparazione'}</h3><label>Nome specifico</label><input id="houseName" value="${escapeHtml(houseEditor.name||'')}" placeholder="es. Pane di farro della casa"><div style="margin-top:8px"><label>Peso finale preparazione (g) · consigliato dopo cottura</label><input id="houseFinalWeight" type="number" min="0" step="1" value="${houseEditor.finalWeight??''}" placeholder="se vuoto: somma ingredienti"></div><div class="grid2" style="margin-top:8px"><div><label>Peso di 1 porzione (g) · facoltativo</label><input id="housePortionGrams" type="number" min="0" step="0.1" value="${houseEditor.portionGrams??''}" placeholder="es. 180"></div><div><label>Nome porzione</label><input id="housePortionName" value="${escapeHtml(houseEditor.portionName||'porzione')}" placeholder="es. tazza, fetta, bicchiere"></div></div><div class="house-ing-search"><label>Aggiungi ingrediente</label><input id="houseIngredientSearch" autocomplete="off" placeholder="es. farina di farro, olio, zucchine"><div id="houseIngredientSuggestions" class="suggestions hidden"></div><div id="houseIngredientSelected" class="house-selected hidden"></div><div class="grid2" style="margin-top:7px"><div><label>Grammi ingrediente</label><input id="houseIngredientGrams" type="number" min="0" step="1"></div><div style="display:flex;align-items:end"><button id="houseIngredientAdd" class="primary" style="width:100%">Aggiungi</button></div></div><div class="house-manual"><button id="houseManualToggle" class="secondary" style="width:100%">+ Crea ingrediente personale</button><div id="houseManualBox" class="hidden" style="margin-top:8px"><label>Nome</label><input id="houseManualName"><div class="grid2" style="margin-top:7px"><div><label>Grammi</label><input id="houseManualGrams" type="number" min="0" step="1"></div><div><label>kcal/100 g</label><input id="houseManualKcal" type="number" min="0" step="0.1"></div><div><label>Proteine/100 g</label><input id="houseManualProtein" type="number" min="0" step="0.1"></div><div><label>Grassi/100 g</label><input id="houseManualFat" type="number" min="0" step="0.1"></div><div><label>Carboidrati/100 g</label><input id="houseManualCarb" type="number" min="0" step="0.1"></div></div><div class="personal-quick-note">L’ingrediente verrà salvato anche nell’archivio Alimenti personali.</div><button id="houseManualAdd" class="secondary" style="width:100%;margin-top:7px">Salva e aggiungi ingrediente</button></div></div></div><div class="backup-mini-title" style="margin-top:10px">Ingredienti</div><div class="house-ing-list">${houseIngredientRowsHtml()}</div><div id="houseRecipeSummary">${houseSummaryHtml()}</div><div class="house-editor-actions"><button id="houseCancel" class="secondary">Annulla</button><button id="houseSave" class="primary">Salva preparazione</button></div></div>`}
 function renderHouseFoodsPanel(){const host=document.getElementById('houseFoodPanel');if(!host)return;document.getElementById('houseFoodCount').textContent=String((data.houseFoods||[]).length);host.innerHTML=`<div class="house-list">${houseSavedListHtml()}</div>${houseEditorHtml()}`;bindHouseFoodsPanel()}
 function houseRefreshSummary(){houseSyncEditorInputs();const h=document.getElementById('houseRecipeSummary');if(h)h.innerHTML=houseSummaryHtml()}
 function houseIngredientSuggestions(q){const box=document.getElementById('houseIngredientSuggestions'),nq=normalizeText(q);if(!box)return;if(nq.length<2){box.classList.add('hidden');box.innerHTML='';return}const groups=searchFoodGroups(nq,{excludeHouseId:houseEditor?.id||null});if(!groups.length){box.innerHTML='<div class="suggestion muted">Nessun risultato. Puoi creare un ingrediente personale.</div>';box.classList.remove('hidden');return}const choices=[];box.innerHTML=groups.map(g=>{const rows=g.items.slice(0,40).map(x=>{const i=choices.push({item:x,source:g.source})-1;return `<button type="button" class="suggestion" style="width:100%;border:0;background:#fff;text-align:left" data-house-choice="${i}"><b>${escapeHtml(x.name)}</b><span class="muted">${escapeHtml(g.source)} · ${x.kcal100} kcal · Prot ${x.protein100} · Gras ${x.fat100} · Carb ${x.carb100} /100 g</span></button>`}).join('');return `<div class="suggestion muted"><b>${escapeHtml(g.source)}</b></div>${rows}`}).join('');box.classList.remove('hidden');box.querySelectorAll('[data-house-choice]').forEach(b=>b.onclick=()=>{const c=choices[Number(b.dataset.houseChoice)];houseSelectedIngredient={...c.item,source:c.source};document.getElementById('houseIngredientSearch').value=c.item.name;document.getElementById('houseIngredientSelected').innerHTML=`<b>${escapeHtml(c.item.name)}</b><br>${money(c.item.kcal100)} kcal · Prot ${dec(c.item.protein100)} · Gras ${dec(c.item.fat100)} · Carb ${dec(c.item.carb100)} /100 g · ${escapeHtml(c.source)}`;document.getElementById('houseIngredientSelected').classList.remove('hidden');box.classList.add('hidden')})}
@@ -1639,7 +1689,7 @@ function personalSavedListHtml(){
 }
 function personalEditorHtml(){
   if(!personalEditor)return'';
-  return `<div class="personal-editor"><h3>${personalEditor.id?'Modifica alimento personale':'Nuovo alimento personale'}</h3><label>Nome alimento</label><input id="personalName" value="${escapeHtml(personalBaseName(personalEditor.name||''))}" placeholder="es. Pane integrale marca X"><div class="grid2" style="margin-top:8px"><div><label>kcal/100 g</label><input id="personalKcal" type="number" min="0" step="0.1" value="${personalEditor.kcal100??''}"></div><div><label>Proteine/100 g</label><input id="personalProtein" type="number" min="0" step="0.1" value="${personalEditor.protein100??''}"></div><div><label>Grassi/100 g</label><input id="personalFat" type="number" min="0" step="0.1" value="${personalEditor.fat100??''}"></div><div><label>Carboidrati/100 g</label><input id="personalCarb" type="number" min="0" step="0.1" value="${personalEditor.carb100??''}"></div></div><div class="personal-quick-note">Il nome verrà salvato con il suffisso <b>(personale)</b>. Se esiste già una voce omonima potrai usare quella esistente, aggiornarla oppure crearne una nuova.</div><div class="grid2" style="margin-top:10px"><button id="personalCancel" class="secondary">Annulla</button><button id="personalSave" class="primary">Salva alimento</button></div></div>`;
+  return `<div class="personal-editor"><h3>${personalEditor.id?'Modifica alimento personale':'Nuovo alimento personale'}</h3><label>Nome alimento</label><input id="personalName" value="${escapeHtml(personalBaseName(personalEditor.name||''))}" placeholder="es. Pane integrale marca X"><div class="grid2" style="margin-top:8px"><div><label>kcal/100 g</label><input id="personalKcal" type="number" min="0" step="0.1" value="${personalEditor.kcal100??''}"></div><div><label>Proteine/100 g</label><input id="personalProtein" type="number" min="0" step="0.1" value="${personalEditor.protein100??''}"></div><div><label>Grassi/100 g</label><input id="personalFat" type="number" min="0" step="0.1" value="${personalEditor.fat100??''}"></div><div><label>Carboidrati/100 g</label><input id="personalCarb" type="number" min="0" step="0.1" value="${personalEditor.carb100??''}"></div></div><div class="grid2" style="margin-top:8px"><div><label>Peso di 1 porzione (g) · facoltativo</label><input id="personalPortionGrams" type="number" min="0" step="0.1" value="${personalEditor.portionGrams??''}" placeholder="es. 180"></div><div><label>Nome porzione</label><input id="personalPortionName" value="${escapeHtml(personalEditor.portionName||'porzione')}" placeholder="es. tazza, fetta, bicchiere"></div></div><div class="personal-quick-note">Il nome verrà salvato con il suffisso <b>(personale)</b>. Se esiste già una voce omonima potrai usare quella esistente, aggiornarla oppure crearne una nuova.</div><div class="grid2" style="margin-top:10px"><button id="personalCancel" class="secondary">Annulla</button><button id="personalSave" class="primary">Salva alimento</button></div></div>`;
 }
 function renderPersonalFoodsPanel(){
   const host=document.getElementById('personalFoodPanel');if(!host)return;
@@ -1647,7 +1697,7 @@ function renderPersonalFoodsPanel(){
   host.innerHTML=`<div class="personal-search-settings"><label>Cerca nell’archivio personale</label><input id="personalFilter" autocomplete="off" value="${escapeHtml(personalFilter)}" placeholder="nome alimento"></div><div class="personal-list">${personalSavedListHtml()}</div>${personalEditorHtml()}`;
   bindPersonalFoodsPanel();
 }
-function personalNew(){personalEditor={id:null,name:'',kcal100:'',protein100:'',fat100:'',carb100:'',version:1};renderPersonalFoodsPanel();setTimeout(()=>document.getElementById('personalName')?.focus(),0)}
+function personalNew(){personalEditor={id:null,name:'',kcal100:'',protein100:'',fat100:'',carb100:'',portionGrams:null,portionName:'porzione',version:1};renderPersonalFoodsPanel();setTimeout(()=>document.getElementById('personalName')?.focus(),0)}
 function personalEdit(id){const r=(data.personalFoods||[]).find(x=>x.id===id);if(!r)return;personalEditor=clone(r);renderPersonalFoodsPanel();setTimeout(()=>document.getElementById('personalName')?.focus(),0)}
 function personalDuplicate(id){
   const r=(data.personalFoods||[]).find(x=>x.id===id);if(!r)return;
@@ -1661,7 +1711,7 @@ function personalDelete(id){
 }
 async function personalSaveSettings(){
   if(!personalEditor)return;
-  const food={name:document.getElementById('personalName').value,kcal100:Number(document.getElementById('personalKcal').value),protein100:Number(document.getElementById('personalProtein').value),fat100:Number(document.getElementById('personalFat').value),carb100:Number(document.getElementById('personalCarb').value)};
+  const food={name:document.getElementById('personalName').value,kcal100:Number(document.getElementById('personalKcal').value),protein100:Number(document.getElementById('personalProtein').value),fat100:Number(document.getElementById('personalFat').value),carb100:Number(document.getElementById('personalCarb').value),portionGrams:nullableNumber(document.getElementById('personalPortionGrams').value),portionName:document.getElementById('personalPortionName').value};
   const current=personalEditor.id?(data.personalFoods||[]).find(x=>x.id===personalEditor.id):null;
   const resolved=await resolvePersonalFoodInput(food,{excludePersonalId:current?.id||null,editingRecord:current||null});
   if(!resolved)return;
