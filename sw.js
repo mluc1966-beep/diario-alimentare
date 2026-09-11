@@ -1,9 +1,9 @@
-const CACHE_NAME='diario-alimentare-v54';
+const CACHE_NAME='diario-alimentare-v55';
 
 const CORE_ASSETS=[
   './',
   './index.html',
-  './manifest_v54.webmanifest',
+  './manifest_v55.webmanifest',
   './crea_foods.js',
   './swiss_foods.js',
   './icon-192-v54.png',
