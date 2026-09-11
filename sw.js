@@ -1,13 +1,14 @@
-const CACHE_NAME='diario-alimentare-v31';
+const CACHE_NAME='diario-alimentare-v54';
 
 const CORE_ASSETS=[
   './',
   './index.html',
-  './manifest.webmanifest',
+  './manifest_v54.webmanifest',
   './crea_foods.js',
   './swiss_foods.js',
-  './icon-192.png',
-  './icon-512.png'
+  './icon-192-v54.png',
+  './icon-512-v54.png',
+  './icon-maskable-512-v54.png'
 ];
 
 self.addEventListener('install',event=>{
@@ -98,3 +99,4 @@ self.addEventListener('fetch',event=>{
     }
   })());
 });
+
