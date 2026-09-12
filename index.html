@@ -1,6 +1,7 @@
 <!doctype html>
 <!-- v52: sincronizzazione locale↔Drive con revisione-base sicura · 2026-09-03 -->
 <!-- v58: manifest.json come Biblioteca · 2026-09-12 -->
+<!-- v60: correzione errore sintattico introdotto in v59 · 2026-09-12 -->
 <!-- v59: struttura PWA allineata a Biblioteca · 2026-09-12 -->
 <!-- v56: PWA standardizzata + icone shortcut/installazione · 2026-09-12 -->
 <!-- v55: installazione PWA + diagnostica installabilità · 2026-09-12 -->
@@ -403,7 +404,7 @@ const DB_VERSION=1;
 const MEALS=['Colazione','Spuntino mattutino','Pranzo','Spuntino pomeridiano','Cena'];
 const CORE_MEALS=['Colazione','Pranzo','Cena'];
 const PEOPLE=['Luca','Daniela'];
-const APP_VERSION=59;
+const APP_VERSION=60;
 const DEFAULT_COLORS={breakfast:'#fff2dc',snack:'#f1ecfa',lunch:'#e9f4ec',dinner:'#f6e7ec'};
 const LEGACY_DINNER_COLOR='#eaf1f8';
 const PASTEL_PALETTE=[
@@ -1931,9 +1932,8 @@ async function hardRefreshToVersion(version){
   const attempts=Number(sessionStorage.getItem(attemptKey)||0);
   sessionStorage.setItem(attemptKey,String(attempts+1));
 
-  // Primo tentativo: aggiorna il SW e ricarica con URL univoco.
-  await getFreshRegistration();catch(e){}
-  }
+  // Aggiorna il Service Worker senza disregistrare altri worker.
+  try{await getFreshRegistration()}catch(e){}
 
   const u=new URL(location.href);
   u.searchParams.set('v',String(version));
