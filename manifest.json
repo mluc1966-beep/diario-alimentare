@@ -1,0 +1,29 @@
+{
+  "name": "Diario alimentare Luca & Daniela",
+  "short_name": "Diario",
+  "description": "Diario alimentare condiviso per Luca e Daniela con kcal e macronutrienti.",
+  "id": "/diario-alimentare/",
+  "start_url": "/diario-alimentare/",
+  "scope": "/diario-alimentare/",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#2457c5",
+  "icons": [
+    {
+      "src": "/diario-alimentare/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/diario-alimentare/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/diario-alimentare/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 <!doctype html>
 <!-- v52: sincronizzazione locale↔Drive con revisione-base sicura · 2026-09-03 -->
+<!-- v58: manifest.json come Biblioteca · 2026-09-12 -->
 <!-- v56: PWA standardizzata + icone shortcut/installazione · 2026-09-12 -->
 <!-- v55: installazione PWA + diagnostica installabilità · 2026-09-12 -->
 <!-- v54: nuova icona PWA Diario Alimentare · 2026-09-12 -->
@@ -17,14 +18,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="description" content="Diario alimentare condiviso per Luca e Daniela con kcal e macronutrienti.">
-<link rel="manifest" href="./manifest.webmanifest?v=56">
+<link rel="manifest" href="./manifest.json?v=58">
 <link rel="icon" type="image/png" sizes="48x48" href="./favicon-48.png?v=56">
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=56">
 <script>
 try{const __d=JSON.parse(localStorage.getItem('diario_crea_v2'));if(__d?.preferences?.showCover===false)document.documentElement.classList.add('cover-disabled')}catch(e){}
 </script>
 <script>
-// v56 · cattura immediata del prompt PWA di Chrome
+// v58 · manifest.json come nella Biblioteca
 window.__diarioInstallPrompt=null;
 window.__diarioInstallEventSeen=false;
 window.addEventListener('beforeinstallprompt',e=>{
@@ -430,7 +431,7 @@ const DB_VERSION=1;
 const MEALS=['Colazione','Spuntino mattutino','Pranzo','Spuntino pomeridiano','Cena'];
 const CORE_MEALS=['Colazione','Pranzo','Cena'];
 const PEOPLE=['Luca','Daniela'];
-const APP_VERSION=56;
+const APP_VERSION=58;
 const DEFAULT_COLORS={breakfast:'#fff2dc',snack:'#f1ecfa',lunch:'#e9f4ec',dinner:'#f6e7ec'};
 const LEGACY_DINNER_COLOR='#eaf1f8';
 const PASTEL_PALETTE=[
