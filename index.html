@@ -1,6 +1,7 @@
 <!doctype html>
 <!-- v52: sincronizzazione locale↔Drive con revisione-base sicura · 2026-09-03 -->
 <!-- v58: manifest.json come Biblioteca · 2026-09-12 -->
+<!-- v59: struttura PWA allineata a Biblioteca · 2026-09-12 -->
 <!-- v56: PWA standardizzata + icone shortcut/installazione · 2026-09-12 -->
 <!-- v55: installazione PWA + diagnostica installabilità · 2026-09-12 -->
 <!-- v54: nuova icona PWA Diario Alimentare · 2026-09-12 -->
@@ -18,26 +19,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="description" content="Diario alimentare condiviso per Luca e Daniela con kcal e macronutrienti.">
-<link rel="manifest" href="./manifest.json?v=58">
-<link rel="icon" type="image/png" sizes="48x48" href="./favicon-48.png?v=56">
-<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=56">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <script>
 try{const __d=JSON.parse(localStorage.getItem('diario_crea_v2'));if(__d?.preferences?.showCover===false)document.documentElement.classList.add('cover-disabled')}catch(e){}
-</script>
-<script>
-// v58 · manifest.json come nella Biblioteca
-window.__diarioInstallPrompt=null;
-window.__diarioInstallEventSeen=false;
-window.addEventListener('beforeinstallprompt',e=>{
-  e.preventDefault();
-  window.__diarioInstallPrompt=e;
-  window.__diarioInstallEventSeen=true;
-  window.dispatchEvent(new Event('diario-install-state'));
-});
-window.addEventListener('appinstalled',()=>{
-  window.__diarioInstallPrompt=null;
-  window.dispatchEvent(new Event('diario-install-state'));
-});
 </script>
 <style>
 :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#172033;background:#f4f6fb;--meal-breakfast:#fff2dc;--meal-snack:#f1ecfa;--meal-lunch:#e9f4ec;--meal-dinner:#f6e7ec}
@@ -390,21 +376,7 @@ button,input,select{font:inherit}button.primary{border:0;border-radius:12px;back
         <div class="grid2 storage-actions"><button id="connectBackupFileBtn" class="secondary">Collega file backup</button><button id="writeBackupFileBtn" class="secondary">Salva file ora</button></div>
       </div>
     </details>
-
-    <details class="card settings-fold" id="settingsInstall">
-      <summary><span class="settings-summary-main"><h2>Installazione app</h2></span><span id="pwaInstallPill" class="pill">verifica</span></summary>
-      <div class="settings-fold-body">
-        <p class="muted settings-chapter-note">Controlla direttamente se Chrome riconosce il Diario come app installabile.</p>
-        <div id="pwaInstallStatus" class="storage-status"><span class="storage-dot"></span>Verifica installabilità…</div>
-        <div class="grid2 storage-actions">
-          <button id="pwaInstallBtn" class="primary" disabled>Installa app</button>
-          <button id="pwaCheckBtn" class="secondary">Verifica ora</button>
-        </div>
-        <p class="backup-file-note">Se Chrome rende disponibile l'installazione vera, il pulsante “Installa app” si attiva e apre il dialogo nativo. In caso contrario qui viene indicato quale requisito non risulta attivo.</p>
-      </div>
-    </details>
-
-    <details class="card settings-fold" id="settingsSources">
+<details class="card settings-fold" id="settingsSources">
       <summary><span class="settings-summary-main"><h2>Dati e fonti</h2></span></summary>
       <div class="settings-fold-body"><p id="catalogInfo" class="muted"></p></div>
     </details>
@@ -431,7 +403,7 @@ const DB_VERSION=1;
 const MEALS=['Colazione','Spuntino mattutino','Pranzo','Spuntino pomeridiano','Cena'];
 const CORE_MEALS=['Colazione','Pranzo','Cena'];
 const PEOPLE=['Luca','Daniela'];
-const APP_VERSION=58;
+const APP_VERSION=59;
 const DEFAULT_COLORS={breakfast:'#fff2dc',snack:'#f1ecfa',lunch:'#e9f4ec',dinner:'#f6e7ec'};
 const LEGACY_DINNER_COLOR='#eaf1f8';
 const PASTEL_PALETTE=[
@@ -1946,14 +1918,9 @@ function remoteAppVersionFromHtml(text){
 async function getFreshRegistration(){
   if(!('serviceWorker' in navigator))return null;
   try{
-    const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
-    try{await reg.update()}catch(e){}
-    if(reg.waiting){
-      try{reg.waiting.postMessage({type:'SKIP_WAITING'})}catch(e){}
-    }
-    return reg;
+    return await navigator.serviceWorker.register('service-worker.js');
   }catch(e){
-    console.warn('Aggiornamento Service Worker non riuscito',e);
+    console.warn('Registrazione Service Worker non riuscita',e);
     return null;
   }
 }
@@ -1965,17 +1932,7 @@ async function hardRefreshToVersion(version){
   sessionStorage.setItem(attemptKey,String(attempts+1));
 
   // Primo tentativo: aggiorna il SW e ricarica con URL univoco.
-  if(attempts===0){
-    await getFreshRegistration();
-  }else{
-    // Se il primo ricaricamento è rimasto sulla vecchia versione, eliminiamo
-    // soltanto la registrazione del Service Worker (NON i dati dell'app)
-    // e ricarichiamo direttamente dalla rete. Al nuovo avvio verrà registrato
-    // di nuovo il Service Worker v31+.
-    try{
-      const regs=await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r=>r.unregister()));
-    }catch(e){}
+  await getFreshRegistration();catch(e){}
   }
 
   const u=new URL(location.href);
@@ -2429,8 +2386,8 @@ async function startApp(){
 v41StartApp();
 </script>
 <script>
-if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>{getFreshRegistration().catch(()=>{})});
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("service-worker.js").catch(()=>{}));
 }
 </script>
 <script>
@@ -4005,64 +3962,5 @@ const v46L=document.getElementById('diaryLuca'),v46D=document.getElementById('di
 if(v46L)v46L.onclick=function(){diaryPerson='Luca';renderDiary()};
 if(v46D)v46D.onclick=function(){diaryPerson='Daniela';renderDiary()};
 })();</script>
-<script>
-// v56 · diagnostica PWA e installazione nativa
-(function(){
-  const $=id=>document.getElementById(id);
-  function standalone(){return !!(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true}
-  async function pwaCheck(){
-    const box=$('pwaInstallStatus'), pill=$('pwaInstallPill'), btn=$('pwaInstallBtn');
-    if(!box||!pill||!btn)return;
-    const rows=[];
-    const secure=window.isSecureContext;
-    rows.push((secure?'✓':'✗')+' HTTPS/contesto sicuro');
-    let reg=null, controlled=false;
-    try{
-      if('serviceWorker' in navigator){
-        reg=await navigator.serviceWorker.getRegistration('./');
-        controlled=!!navigator.serviceWorker.controller;
-      }
-    }catch(e){}
-    rows.push((reg&&reg.active?'✓':'✗')+' Service Worker attivo');
-    rows.push((controlled?'✓':'△')+' Pagina controllata dal Service Worker');
-    let manifestOk=false, iconsOk=false;
-    try{
-      const r=await fetch('manifest.webmanifest?v=55',{cache:'no-store'});
-      if(r.ok){
-        const m=await r.json();
-        manifestOk=!!((m.name||m.short_name)&&m.start_url&&['standalone','fullscreen','minimal-ui'].includes(m.display));
-        const sizes=(m.icons||[]).map(x=>String(x.sizes||''));
-        iconsOk=sizes.some(x=>x.includes('192x192'))&&sizes.some(x=>x.includes('512x512'));
-      }
-    }catch(e){}
-    rows.push((manifestOk?'✓':'✗')+' Manifest valido');
-    rows.push((iconsOk?'✓':'✗')+' Icone 192/512 dichiarate');
-    const installed=standalone();
-    const prompt=!!window.__diarioInstallPrompt;
-    rows.push((installed?'✓':prompt?'✓':'△')+(installed?' App già aperta in modalità installata':prompt?' Prompt di installazione disponibile':' Chrome non ha ancora esposto il prompt di installazione'));
-    box.innerHTML='<b>'+ (installed?'App già installata':prompt?'Installazione disponibile':'Installazione non ancora disponibile') +'</b><br>'+rows.join('<br>');
-    box.className='storage-status '+(installed||prompt?'good':'warn');
-    pill.textContent=installed?'installata':prompt?'disponibile':'non disponibile';
-    btn.disabled=installed||!prompt;
-    btn.textContent=installed?'Già installata':'Installa app';
-  }
-  async function install(){
-    const ev=window.__diarioInstallPrompt;
-    if(!ev)return pwaCheck();
-    try{
-      await ev.prompt();
-      await ev.userChoice;
-    }catch(e){}
-    window.__diarioInstallPrompt=null;
-    pwaCheck();
-  }
-  window.addEventListener('diario-install-state',pwaCheck);
-  window.addEventListener('load',()=>setTimeout(pwaCheck,1200));
-  document.addEventListener('click',e=>{
-    if(e.target&&e.target.id==='pwaInstallBtn')install();
-    if(e.target&&e.target.id==='pwaCheckBtn')pwaCheck();
-  });
-})();
-</script>
 </body>
 </html>
