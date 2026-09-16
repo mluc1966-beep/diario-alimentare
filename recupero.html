@@ -1,13 +1,27 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recupero Diario v3</title>
-<style>body{font-family:system-ui;margin:18px;max-width:900px}button,input{font-size:18px;padding:12px;margin:6px 4px}.box{padding:12px;border:1px solid #ccc;border-radius:10px;margin:10px 0}.good{background:#eaf7ee}.warn{background:#fff3cd}</style>
-<h1>Recupero Diario v3</h1><p>Ripristina la copia recuperata nello stesso archivio locale del Diario e verifica subito la rilettura.</p>
-<input id="f" type="file" accept=".json,application/json"><div id="o"></div>
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recupero Diario v4</title>
+<style>body{font-family:system-ui;margin:18px;max-width:900px}button,input{font-size:18px;padding:12px;margin:6px 4px}.box{padding:12px;border:1px solid #bbb;border-radius:10px;margin:10px 0}.ok{background:#eaf7ee}.warn{background:#fff3cd}</style>
+<h1>Recupero Diario v4</h1>
+<p>Ripristina la copia e la marca come <b>modifica locale pendente</b>, così all'apertura il Diario non può sostituirla automaticamente con Drive.</p>
+<input id=f type=file accept=".json,application/json"><div id=o></div>
 <script>
-const DB='diario_alimentare_db',KEY='diario_crea_v2',META='diario_crea_v2_meta'; let D=null;
+const DB='diario_alimentare_db',KEY='diario_crea_v2',META='diario_crea_v2_meta',CM='diario_cloud_meta_v41';let D=null;
 const sum=d=>{let days=0,e=0,last='';for(const w of Object.values(d?.weeks||{}))for(const [ds,x] of Object.entries(w?.days||{})){let a=0;for(const p of ['Luca','Daniela']){let n=(x?.[p]?.entries||[]).length;e+=n;a+=n+(x?.[p]?.closed?1:0)}if(a){days++;if(ds>last)last=ds}}return{days,e,last}};
 function odb(){return new Promise((ok,no)=>{let r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{let d=r.result;if(!d.objectStoreNames.contains('app'))d.createObjectStore('app',{keyPath:'key'});if(!d.objectStoreNames.contains('snapshots'))d.createObjectStore('snapshots',{keyPath:'id'});if(!d.objectStoreNames.contains('handles'))d.createObjectStore('handles',{keyPath:'key'})};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
 function get(db,s,k){return new Promise((ok,no)=>{let r=db.transaction(s).objectStore(s).get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
-function put(db,s,v){return new Promise((ok,no)=>{let t=db.transaction(s,'readwrite'),r=t.objectStore(s).put(v);t.oncomplete=()=>ok();t.onerror=()=>no(t.error);r.onerror=()=>no(r.error)})}
-f.onchange=async()=>{try{let x=JSON.parse(await f.files[0].text());D=x.data||x;if(!D?.settings||!D?.weeks)throw Error('Formato non riconosciuto');let s=sum(D);o.innerHTML=`<div class="box good"><b>File letto:</b> ${s.days} giorni · ${s.e} voci · ultimo ${s.last}<br><button id=r>RIPRISTINA E VERIFICA</button></div>`;r.onclick=restore}catch(e){o.innerHTML='<div class="box warn">'+e+'</div>'}}
-async function restore(){r.disabled=true;try{let db=await odb(),cur=await get(db,'app','current'),now=new Date().toISOString();if(cur?.data)await put(db,'snapshots',{id:'safety:prima-recupero:'+now,createdAt:now,label:'Prima recupero manuale',data:cur.data,version:61});await put(db,'app',{key:'previous',data:cur?.data||D,updatedAt:cur?.updatedAt||now,createdAt:now,label:'Pre-recupero',version:61});await put(db,'app',{key:'current',data:D,updatedAt:now,reason:'RECUPERO_MANUALE',version:61});localStorage.setItem(KEY,JSON.stringify(D));localStorage.setItem(META,JSON.stringify({updatedAt:now}));let chk=await get(db,'app','current'),s=sum(chk.data),ls=sum(JSON.parse(localStorage.getItem(KEY)));if(s.e!==sum(D).e||ls.e!==sum(D).e)throw Error('Verifica scrittura fallita');o.innerHTML=`<div class="box good"><b>VERIFICATO NELL'ARCHIVIO:</b><br>IndexedDB: ${s.days} giorni · ${s.e} voci · ultimo ${s.last}<br>localStorage: ${ls.days} giorni · ${ls.e} voci · ultimo ${ls.last}<br><br><button onclick="location.href='./index.html?recovery='+Date.now()">APRI IL DIARIO ORA</button><br><b>Non usare Sincronizza ora.</b></div>`}catch(e){r.disabled=false;o.innerHTML='<div class="box warn"><b>ERRORE:</b> '+(e.message||e)+'</div>'}}
+function put(db,s,v){return new Promise((ok,no)=>{let t=db.transaction(s,'readwrite');t.objectStore(s).put(v);t.oncomplete=ok;t.onerror=()=>no(t.error)})}
+f.onchange=async()=>{try{let x=JSON.parse(await f.files[0].text());D=x.data||x;if(!D?.settings||!D?.weeks)throw Error('Formato non riconosciuto');let s=sum(D);o.innerHTML=`<div class="box ok"><b>${s.days} giorni · ${s.e} voci · ultimo ${s.last}</b><br><button id=r>RIPRISTINA E PROTEGGI</button></div>`;r.onclick=restore}catch(e){o.innerHTML='<div class="box warn">'+e+'</div>'}}
+async function restore(){r.disabled=true;try{
+ let db=await odb(),cur=await get(db,'app','current'),now=new Date().toISOString();
+ if(cur?.data)await put(db,'snapshots',{id:'safety:prima-recupero-protetto:'+now,createdAt:now,label:'Prima recupero protetto',data:cur.data,version:61});
+ if(cur?.data)await put(db,'app',{key:'previous',data:cur.data,updatedAt:cur.updatedAt||now,createdAt:now,label:'Pre-recupero',version:61});
+ await put(db,'app',{key:'current',data:D,updatedAt:now,reason:'RECUPERO_PROTETTO',version:61});
+ localStorage.setItem(KEY,JSON.stringify(D));localStorage.setItem(META,JSON.stringify({updatedAt:now,version:61}));
+ let cm={};try{cm=JSON.parse(localStorage.getItem(CM)||'{}')}catch(_){}
+ const base=Math.max(0,Number(cm.revision)||Number(cm.pendingBaseRevision)||0);
+ cm.pending=true;cm.pendingBaseRevision=base;cm.localChangedAt=now;cm.recoveryProtected=true;
+ localStorage.setItem(CM,JSON.stringify(cm));
+ let chk=await get(db,'app','current'),s=sum(chk.data),ls=sum(JSON.parse(localStorage.getItem(KEY))),cm2=JSON.parse(localStorage.getItem(CM)||'{}');
+ if(s.e!==sum(D).e||ls.e!==sum(D).e||cm2.pending!==true)throw Error('Verifica finale fallita');
+ o.innerHTML=`<div class="box ok"><b>RECUPERO PROTETTO VERIFICATO</b><br>IndexedDB: ${s.days} giorni · ${s.e} voci · ultimo ${s.last}<br>Mirror: ${ls.days} giorni · ${ls.e} voci<br>Cloud: modifiche locali PENDENTI · base revisione ${cm2.pendingBaseRevision}<br><br><button onclick="location.href='./index.html?recoveryProtected='+Date.now()">APRI IL DIARIO</button></div>`;
+}catch(e){r.disabled=false;o.innerHTML='<div class="box warn"><b>ERRORE:</b> '+(e.message||e)+'</div>'}}
 </script>
