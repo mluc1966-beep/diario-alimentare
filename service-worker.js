@@ -1,4 +1,4 @@
-const CACHE_NAME="diario-alimentare-v61";
+const CACHE_NAME="diario-alimentare-v61-crea2";
 const APP_SHELL=[
   "./",
   "./index.html",
