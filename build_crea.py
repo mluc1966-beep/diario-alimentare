@@ -97,7 +97,7 @@ def parse_food(url: str, code: str, fallback_name: str):
 def main():
     soup = BeautifulSoup(get(INDEX), "html.parser")
     foods = {}
-    rx = re.compile(r"/tabelle-nutrizionali/(\d+)/?$")
+    rx = re.compile(r"/tabelle-nutrizionali/([A-Za-z0-9]+)/?$")
 
     for a in soup.select("a[href]"):
         href = a.get("href", "").split("?", 1)[0].split("#", 1)[0]
